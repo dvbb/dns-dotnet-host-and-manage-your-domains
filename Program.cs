@@ -1,24 +1,21 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
-using Microsoft.Azure.Management.AppService.Fluent;
-using Microsoft.Azure.Management.AppService.Fluent.Models;
-using Microsoft.Azure.Management.Compute.Fluent;
-using Microsoft.Azure.Management.Compute.Fluent.Models;
-using Microsoft.Azure.Management.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
-using Microsoft.Azure.Management.Samples.Common;
-using System;
-using System.Linq;
-using System.Threading;
+using Azure;
+using Azure.Core;
+using Azure.Identity;
+using Azure.ResourceManager.Resources.Models;
+using Azure.ResourceManager.Samples.Common;
+using Azure.ResourceManager.Resources;
+using Azure.ResourceManager;
 
 namespace ManageDns
 {
     public class Program
     {
+        private static ResourceIdentifier? _resourceGroupId = null;
         private const string CustomDomainName = "THE CUSTOM DOMAIN THAT YOU OWN (e.g. contoso.com)";
-        
+
         /**
          * Azure DNS sample for managing DNS zones.
          *  - Create a root DNS zone (contoso.com)
@@ -33,16 +30,19 @@ namespace ManageDns
          *  - Remove A record from the root DNS zone
          *  - Delete the child DNS zone
          */
-        public static void RunSample(IAzure azure)
+        public static async Task RunSample(ArmClient client)
         {
-            string rgName = SdkContext.RandomResourceName("rgNEMV_", 24);
-            string webAppName = SdkContext.RandomResourceName("webapp1-", 20);
-            
-            try
             {
-                var resourceGroup = azure.ResourceGroups.Define(rgName)
-                    .WithRegion(Region.USWest)
-                    .Create();
+                // Get default subscription
+                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
+
+                // Create a resource group in the EastUS region
+                string rgName = Utilities.CreateRandomName("PrivateDnsTemplateRG");
+                Utilities.Log($"creating resource group...");
+                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
+                ResourceGroupResource resourceGroup = rgLro.Value;
+                _resourceGroupId = resourceGroup.Id;
+                Utilities.Log("Created a resource group with name: " + resourceGroup.Data.Name);
 
                 //============================================================
                 // Creates root DNS Zone
@@ -251,44 +251,42 @@ namespace ManageDns
                 azure.DnsZones.DeleteById(partnersDnsZone.Id);
                 Utilities.Log("Deleted child DNS zone " + partnersDnsZone.Name);
             }
-            finally
-            {
-                try
-                {
-                    Utilities.Log("Deleting Resource Group: " + rgName);
-                    azure.ResourceGroups.DeleteByName(rgName);
-                    Utilities.Log("Deleted Resource Group: " + rgName);
-                }
-                catch (Exception)
-                {
-                    Utilities.Log("Did not create any resources in Azure. No clean up is necessary");
-                }
-            }
+            //finally
+            //{
+            //    try
+            //    {
+            //        if (_resourceGroupId is not null)
+            //        {
+            //            Utilities.Log($"Deleting Resource Group: {_resourceGroupId}");
+            //            await client.GetResourceGroupResource(_resourceGroupId).DeleteAsync(WaitUntil.Completed);
+            //            Utilities.Log($"Deleted Resource Group: {_resourceGroupId}");
+            //        }
+            //    }
+            //    catch (Exception)
+            //    {
+            //        Utilities.Log("Did not create any resources in Azure. No clean up is necessary");
+            //    }
+            //}
         }
 
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
-            try
             {
                 //=================================================================
                 // Authenticate
-                var credentials = SdkContext.AzureCredentialsFactory.FromFile(Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
+                var clientId = Environment.GetEnvironmentVariable("CLIENT_ID");
+                var clientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
+                var tenantId = Environment.GetEnvironmentVariable("TENANT_ID");
+                var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
+                ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                ArmClient client = new ArmClient(credential, subscription);
 
-                var azure = Azure
-                    .Configure()
-                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
-                    .Authenticate(credentials)
-                    .WithDefaultSubscription();
-
-                // Print selected subscription
-                Utilities.Log("Selected subscription: " + azure.SubscriptionId);
-
-                RunSample(azure);
+                await RunSample(client);
             }
-            catch (Exception e)
-            {
-                Utilities.Log(e);
-            }
+            //catch (Exception e)
+            //{
+            //    Utilities.Log(e);
+            //}
         }
     }
 }
