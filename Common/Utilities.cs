@@ -51,5 +51,29 @@ namespace Azure.ResourceManager.Samples.Common
         public static string CreatePassword() => "azure12345QWE!";
 
         public static string CreateUsername() => "tirekicker";
+
+        public static string CheckAddress(string url, IDictionary<string, string> headers = null)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(300);
+                    if (headers != null)
+                    {
+                        foreach (var header in headers)
+                        {
+                            client.DefaultRequestHeaders.Add(header.Key, header.Value);
+                        }
+                    }
+                    return $"Ping: {url}: {client.GetAsync(url).Result.StatusCode}";
+                }
+            }
+            catch (Exception ex)
+            {
+                Utilities.Log(ex);
+                return ex.ToString();
+            }
+        }
     }
 }
