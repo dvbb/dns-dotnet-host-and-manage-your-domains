@@ -13,6 +13,11 @@ using Azure.ResourceManager.AppService;
 using Azure.ResourceManager.AppService.Models;
 using Azure.ResourceManager.Dns.Models;
 using System.Net;
+using Azure.ResourceManager.Network.Models;
+using Azure.ResourceManager.Network;
+using Azure.ResourceManager.Compute.Models;
+using Azure.ResourceManager.Compute;
+using System.Net.NetworkInformation;
 
 namespace ManageDns
 {
@@ -36,23 +41,50 @@ namespace ManageDns
          */
         public static async Task RunSample(ArmClient client)
         {
+            string rgName = Utilities.CreateRandomName("DnsTemplateRG");
+            string dnsZoneName = $"{Utilities.CreateRandomName("contoso")}.com";
+            string appServicePlanName = Utilities.CreateRandomName("servicePlan");
+            string appName = Utilities.CreateRandomName("SampleWebApp");
+            string vnetName1 = Utilities.CreateRandomName("vnet1-");
+            string vnetName2 = Utilities.CreateRandomName("vnet2-");
+            string publicIpName1 = Utilities.CreateRandomName("pip1-");
+            string publicIpName2 = Utilities.CreateRandomName("pip2-");
+            string nicName1 = Utilities.CreateRandomName("nic1-");
+            string nicName2 = Utilities.CreateRandomName("nic2-");
+            string vmName1 = Utilities.CreateRandomName("vm1-");
+            string vmName2 = Utilities.CreateRandomName("vm2-");
+
+            string domainName = dnsZoneName;
+            string cnameRecordName = "www";
+            string txtRecordName = "asuid.www";
+            var partnerSubDomainName = "partners." + dnsZoneName;
+
+            //rgName = ("DnsTemplateRG7711");
+
+
             {
                 // Get default subscription
                 SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
 
                 // Create a resource group in the EastUS region
-                string rgName = Utilities.CreateRandomName("DnsTemplateRG");
                 Utilities.Log($"creating resource group...");
                 ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
                 ResourceGroupResource resourceGroup = rgLro.Value;
                 _resourceGroupId = resourceGroup.Id;
                 Utilities.Log("Created a resource group with name: " + resourceGroup.Data.Name);
 
+                {
+                    //var app1 = await rgLro.Value.GetWebSites().GetAsync("SampleWebApp5062");
+                    //var domainList = await app1.Value.GetSiteHostNameBindings().GetAllAsync().ToEnumerableAsync();
+                    //;
+                    //;
+                    ;
+                }
+
                 //============================================================
                 // Creates root DNS Zone
 
                 Utilities.Log("Creating root DNS zone...");
-                string dnsZoneName = $"{Utilities.CreateRandomName("contoso")}.com";
                 DnsZoneData dataZoneInput = new DnsZoneData("Global") { };
                 var dnsZoneLro = await resourceGroup.GetDnsZones().CreateOrUpdateAsync(WaitUntil.Completed, dnsZoneName, dataZoneInput);
                 DnsZoneResource dnsZone = dnsZoneLro.Value;
@@ -69,11 +101,10 @@ namespace ManageDns
                     Utilities.Log(" " + nameServer);
                 }
 
-                ////============================================================
-                //// Creates a web App
+                //============================================================
+                // Creates a web App
 
                 Utilities.Log("Creating Web App...");
-                string appServicePlanName = Utilities.CreateRandomName("servicePlan");
                 AppServicePlanData appServicePlanInput = new AppServicePlanData(new AzureLocation("East US"))
                 {
                     Sku = new AppServiceSkuDescription()
@@ -88,7 +119,6 @@ namespace ManageDns
                 };
                 ArmOperation<AppServicePlanResource> appServicePlanLro = await resourceGroup.GetAppServicePlans().CreateOrUpdateAsync(WaitUntil.Completed, appServicePlanName, appServicePlanInput);
 
-                string appName = Utilities.CreateRandomName("SampleWebApp");
                 WebSiteData appInput = new WebSiteData(resourceGroup.Data.Location)
                 {
                     AppServicePlanId = appServicePlanLro.Value.Data.Id,
@@ -97,16 +127,6 @@ namespace ManageDns
                 WebSiteResource app = lro.Value;
                 Utilities.Log("Created web app: " + app.Data.Name);
 
-                //var webApp = azure.WebApps.Define(webAppName)
-                //        .WithRegion(Region.USEast2)
-                //        .WithExistingResourceGroup(rgName)
-                //        .WithNewWindowsPlan(PricingTier.BasicB1)
-                //        .DefineSourceControl()
-                //            .WithPublicGitRepository("https://github.com/jianghaolu/azure-site-test")
-                //            .WithBranch("master")
-                //            .Attach()
-                //        .Create();
-
                 //============================================================
                 // Creates a CName record and bind it with the web app
 
@@ -114,7 +134,7 @@ namespace ManageDns
                 // alias for www.[customDomainName]
 
                 Utilities.Log("Updating DNS zone by adding a CName record...");
-                string cnameRecordName = "www";
+
                 var cnameInput = new DnsCnameRecordData()
                 {
                     TtlInSeconds = 3600,
@@ -123,18 +143,6 @@ namespace ManageDns
                 var cnameRecord = await dnsZone.GetDnsCnameRecords().CreateOrUpdateAsync(WaitUntil.Completed, cnameRecordName, cnameInput);
                 Utilities.Log("DNS zone updated");
 
-                //string aRecordName = "@";
-                //var aRecordInput = new DnsARecordData()
-                //{
-                //    TtlInSeconds = 3600,
-                //    DnsARecords =
-                //    {
-                //        new DnsARecordInfo(){ IPv4Address = IPAddress.Parse("") }
-                //    }
-                //};
-                //var aRecord = await dnsZone.GetDnsARecords().CreateOrUpdateAsync(WaitUntil.Completed,aRecordName, aRecordInput);
-
-                string txtRecordName = "asuid.www";
                 var txtRecordInput = new DnsTxtRecordData()
                 {
                     TtlInSeconds = 3600,
@@ -146,11 +154,7 @@ namespace ManageDns
                         }
                     }
                 };
-                var txtRecord = await dnsZone.GetDnsTxtRecords().CreateOrUpdateAsync(WaitUntil.Completed,txtRecordName, txtRecordInput);
-
-                //rootDnsZone = rootDnsZone.Update()
-                //        .WithCNameRecordSet("www", webApp.DefaultHostName)
-                //        .Apply();
+                var txtRecord = await dnsZone.GetDnsTxtRecords().CreateOrUpdateAsync(WaitUntil.Completed, txtRecordName, txtRecordInput);
 
                 // Waiting for a minute for DNS CName entry to propagate
                 Utilities.Log("Waiting a minute for CName record entry to propagate...");
@@ -159,159 +163,197 @@ namespace ManageDns
                 // Step 2: Adds a web app host name binding for www.[customDomainName]
                 //         This binding action will fail if the CName record propagation is not yet completed
 
+                // Create a app service domain
+                Utilities.Log($"Creating a app service domain...");
+                RegistrationContactInfo registrationInput = new RegistrationContactInfo("test@gmail.com", "test", "test", "+86.18800001111")
+                {
+                    JobTitle = "Billing",
+                    Organization = "Microsoft Inc.",
+                    AddressMailing = new RegistrationAddressInfo("shanghai", "shanghai", "CN", "180000", "shanghai")
+                };
+                AppServiceDomainData appServiceDomainInput = new AppServiceDomainData("Global")
+                {
+                    ContactAdmin = registrationInput,
+                    ContactTech = registrationInput,
+                    ContactBilling = registrationInput,
+                    ContactRegistrant = registrationInput,
+                    IsDomainPrivacyEnabled = true,
+                    Consent = new DomainPurchaseConsent()
+                    {
+                        AgreementKeys = { "key1" },
+                        AgreedBy = "192.0.2.1"
+                    },
+                };
+                ;
+                var appServiceDomainLro = await resourceGroup.GetAppServiceDomains().CreateOrUpdateAsync(WaitUntil.Completed, domainName, appServiceDomainInput);
+                AppServiceDomainResource appServiceDomain = appServiceDomainLro.Value;
+                Utilities.Log($"Created app service domain: {appServiceDomain.Data.Name}");
+                Utilities.Log($"Update app service domain to binding azure dns zone...");
+                AppServiceDomainPatch updateDomainInput = new AppServiceDomainPatch()
+                {
+                    DnsType = AppServiceDnsType.AzureDns,
+                    DnsZoneId = dnsZone.Id
+                };
+                await appServiceDomain.UpdateAsync(updateDomainInput);
+                Utilities.Log($"App service domain has bound DNS zone");
+
                 Utilities.Log("Updating Web app with host name binding...");
-                string hostName = $"www.{dnsZone.Data.Name}";
+                string hostName = $"www.{app.Data.Name}";
                 HostNameBindingData bindInput = new HostNameBindingData()
                 {
-                    CustomHostNameDnsRecordType = CustomHostNameDnsRecordType.CName,
+                    CustomHostNameDnsRecordType = CustomHostNameDnsRecordType.A,
+                    HostNameType = AppServiceHostNameType.Managed,
+                    SiteName = app.Data.Name,
+                    SslState = HostNameBindingSslState.IPBasedEnabled,
+                    DomainId = appServiceDomain.Id,
+                    //Thumbprint = BinaryData.FromString(Environment.GetEnvironmentVariable("thumbprint")),
                 };
-                await app.GetSiteHostNameBindings().CreateOrUpdateAsync(WaitUntil.Completed, hostName, bindInput);
+                // Need thumbprint
+                //await app.GetSiteHostNameBindings().CreateOrUpdateAsync(WaitUntil.Completed, hostName, bindInput);
                 Utilities.Log("Web app updated");
 
-                //webApp.Update()
-                //        .DefineHostnameBinding()
-                //            .WithThirdPartyDomain(CustomDomainName)
-                //            .WithSubDomain("www")
-                //            .WithDnsRecordType(CustomHostNameDnsRecordType.CName)
-                //            .Attach()
-                //        .Apply();
+                //============================================================
+                // Creates a virtual machine with public IP
 
+                // Create vnet
+                VirtualNetworkResource vnet1 = await Utilities.CreateVirtualNetwork(resourceGroup, vnetName1);
+                ResourceIdentifier subnetId1 = vnet1.Data.Subnets[0].Id;
+                // Create public ip
+                PublicIPAddressResource publicIP1 = await Utilities.CreatePublicIP(resourceGroup, publicIpName1);
+                // Create network interface
+                NetworkInterfaceResource nic1 = await Utilities.CreateNetworkInterface(resourceGroup, subnetId1, publicIP1.Id, nicName1);
 
+                Utilities.Log("Creating a virtual machine with public IP...");
 
-                ////============================================================
-                //// Creates a virtual machine with public IP
+                VirtualMachineData vmInput1 = Utilities.GetDefaultVMInputData(resourceGroup, vmName1);
+                vmInput1.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic1.Id, Primary = true });
+                var vmLro1 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName1, vmInput1);
+                VirtualMachineResource vm1 = vmLro1.Value;
+                Utilities.Log($"Created virtual machine: {vm1.Data.Name}");
 
-                //Utilities.Log("Creating a virtual machine with public IP...");
-                //var virtualMachine1 = azure.VirtualMachines
-                //        .Define(SdkContext.RandomResourceName("employeesvm-", 20))
-                //        .WithRegion(Region.USEast)
-                //        .WithExistingResourceGroup(resourceGroup)
-                //        .WithNewPrimaryNetwork("10.0.0.0/28")
-                //        .WithPrimaryPrivateIPAddressDynamic()
-                //        .WithNewPrimaryPublicIPAddress(SdkContext.RandomResourceName("empip-", 20))
-                //        .WithPopularWindowsImage(KnownWindowsVirtualMachineImage.WindowsServer2012R2Datacenter)
-                //        .WithAdminUsername("testuser")
-                //        .WithAdminPassword(Utilities.CreatePassword())
-                //        .WithSize(VirtualMachineSizeTypes.Parse("Standard_D2a_v4"))
-                //        .Create();
-                //Utilities.Log("Virtual machine created");
+                //============================================================
+                // Update DNS zone by adding a A record in root DNS zone pointing to virtual machine IPv4 address
 
-                ////============================================================
-                //// Update DNS zone by adding a A record in root DNS zone pointing to virtual machine IPv4 address
+                Utilities.Log("Updating root DNS zone " + dnsZoneName + "...");
+                var aInput = new DnsARecordData()
+                {
+                    TtlInSeconds = 3600,
+                    DnsARecords =
+                    {
+                        new DnsARecordInfo()
+                        {
+                            IPv4Address = IPAddress.Parse(publicIP1.Data.IPAddress)
+                        }
+                    }
+                };
+                var aRecord = await dnsZone.GetDnsARecords().CreateOrUpdateAsync(WaitUntil.Completed, "@", aInput);
+                Utilities.Log("Updated root DNS zone " + dnsZone.Data.Name);
 
-                //var vm1PublicIpAddress = virtualMachine1.GetPrimaryPublicIPAddress();
-                //Utilities.Log("Updating root DNS zone " + CustomDomainName + "...");
-                //rootDnsZone = rootDnsZone.Update()
-                //        .DefineARecordSet("employees")
-                //            .WithIPv4Address(vm1PublicIpAddress.IPAddress)
-                //            .Attach()
-                //        .Apply();
-                //Utilities.Log("Updated root DNS zone " + rootDnsZone.Name);
-                //Utilities.Print(rootDnsZone);
+                // Prints the CName and A Records in the root DNS zone
 
-                //// Prints the CName and A Records in the root DNS zone
-                ////
-                //Utilities.Log("Getting CName record set in the root DNS zone " + CustomDomainName + "...");
-                //var cnameRecordSets = rootDnsZone
-                //        .CNameRecordSets
-                //        .List();
+                Utilities.Log("Getting CName record set in the root DNS zone " + dnsZoneName + "...");
 
-                //foreach (var cnameRecordSet in cnameRecordSets)
-                //{
-                //    Utilities.Log("Name: " + cnameRecordSet.Name + " Canonical Name: " + cnameRecordSet.CanonicalName);
-                //}
+                await foreach (var cnameRecordSet in dnsZone.GetDnsCnameRecords().GetAllAsync())
+                {
+                    Utilities.Log("Name: " + cnameRecordSet.Data.Name + " Canonical Name: " + cnameRecordSet.Data.Cname);
+                }
 
-                //Utilities.Log("Getting ARecord record set in the root DNS zone " + CustomDomainName + "...");
-                //var aRecordSets = rootDnsZone
-                //        .ARecordSets
-                //        .List();
+                Utilities.Log("Getting ARecord record set in the root DNS zone " + dnsZoneName + "...");
 
-                //foreach (var aRecordSet in aRecordSets)
-                //{
-                //    Utilities.Log("Name: " + aRecordSet.Name);
-                //    foreach (var ipv4Address in aRecordSet.IPv4Addresses)
-                //    {
-                //        Utilities.Log("  " + ipv4Address);
-                //    }
-                //}
+                await foreach (var aRecordSet in dnsZone.GetDnsARecords().GetAllAsync())
+                {
+                    Utilities.Log("Name: " + aRecordSet.Data.Name);
+                    foreach (var ipv4Address in aRecordSet.Data.DnsARecords)
+                    {
+                        Utilities.Log("  " + ipv4Address.IPv4Address);
+                    }
+                }
 
-                ////============================================================
-                //// Creates a child DNS zone
+                //============================================================
+                // Creates a child DNS zone
 
-                //var partnerSubDomainName = "partners." + CustomDomainName;
-                //Utilities.Log("Creating child DNS zone " + partnerSubDomainName + "...");
+                Utilities.Log("Creating child DNS zone " + partnerSubDomainName + "...");
                 //var partnersDnsZone = azure.DnsZones
                 //        .Define(partnerSubDomainName)
                 //        .WithExistingResourceGroup(resourceGroup)
-                //        .Create();
-                //Utilities.Log("Created child DNS zone " + partnersDnsZone.Name);
-                //Utilities.Print(partnersDnsZone);
 
-                ////============================================================
-                //// Adds NS records in the root dns zone to delegate partners.[customDomainName] to child dns zone
+                DnsZoneData childZoneInput = new DnsZoneData("Global") { };
+                var childZoneLro = await resourceGroup.GetDnsZones().CreateOrUpdateAsync(WaitUntil.Completed, partnerSubDomainName, childZoneInput);
+                DnsZoneResource childZone = childZoneLro.Value;
+                Utilities.Log("Created child DNS zone " + childZone.Data.Name);
 
-                //Utilities.Log("Updating root DNS zone " + rootDnsZone + "...");
-                //var nsRecordStage = rootDnsZone
-                //        .Update()
-                //        .DefineNSRecordSet("partners")
-                //        .WithNameServer(partnersDnsZone.NameServers[0]);
-                //for (int i = 1; i < partnersDnsZone.NameServers.Count(); i++)
-                //{
-                //    nsRecordStage = nsRecordStage.WithNameServer(partnersDnsZone.NameServers[i]);
-                //}
-                //nsRecordStage
-                //        .Attach()
-                //        .Apply();
-                //Utilities.Log("Root DNS zone updated");
-                //Utilities.Print(rootDnsZone);
+                //============================================================
+                // Adds NS records in the root dns zone to delegate partners.[customDomainName] to child dns zone
 
-                ////============================================================
-                //// Creates a virtual machine with public IP
+                Utilities.Log("Updating root DNS zone " + dnsZone.Data.Name + "...");
+                DnsNSRecordData linkChildNSRecord = new DnsNSRecordData()
+                {
+                    TtlInSeconds = 3600,
+                };
+                foreach (var nameServer in childZone.Data.NameServers)
+                {
+                    linkChildNSRecord.DnsNSRecords.Add(new DnsNSRecordInfo() { DnsNSDomainName = nameServer });
+                }
+                _ = await dnsZone.GetDnsNSRecords().CreateOrUpdateAsync(WaitUntil.Completed, "partner", linkChildNSRecord);
 
-                //Utilities.Log("Creating a virtual machine with public IP...");
-                //var virtualMachine2 = azure.VirtualMachines
-                //        .Define(SdkContext.RandomResourceName("partnersvm-", 20))
-                //        .WithRegion(Region.USEast)
-                //        .WithExistingResourceGroup(resourceGroup)
-                //        .WithNewPrimaryNetwork("10.0.0.0/28")
-                //        .WithPrimaryPrivateIPAddressDynamic()
-                //        .WithNewPrimaryPublicIPAddress(SdkContext.RandomResourceName("ptnerpip-", 20))
-                //        .WithPopularWindowsImage(KnownWindowsVirtualMachineImage.WindowsServer2012R2Datacenter)
-                //        .WithAdminUsername("testuser")
-                //        .WithAdminPassword(Utilities.CreatePassword())
-                //        .WithSize(VirtualMachineSizeTypes.Parse("Standard_D2a_v4"))
-                //        .Create();
+                Utilities.Log("Root DNS zone updated");
+
+                //============================================================
+                // Creates a virtual machine with public IP
+
+                // Create vnet
+                VirtualNetworkResource vnet2 = await Utilities.CreateVirtualNetwork(resourceGroup, vnetName2);
+                ResourceIdentifier subnetId2 = vnet2.Data.Subnets[0].Id;
+                // Create public ip
+                PublicIPAddressResource publicIP2 = await Utilities.CreatePublicIP(resourceGroup, publicIpName2);
+                // Create network interface
+                NetworkInterfaceResource nic2 = await Utilities.CreateNetworkInterface(resourceGroup, subnetId2, publicIP2.Id, nicName2);
+
+                Utilities.Log("Creating a virtual machine with public IP...");
+
+                VirtualMachineData vmInput2 = Utilities.GetDefaultVMInputData(resourceGroup, vmName2);
+                vmInput2.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic2.Id, Primary = true });
+                var vmLro2 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName2, vmInput2);
+                VirtualMachineResource vm2 = vmLro2.Value;
+                Utilities.Log($"Created virtual machine: {vm2.Data.Name}");
+
                 //Utilities.Log("Virtual machine created");
 
-                ////============================================================
-                //// Update child DNS zone by adding a A record pointing to virtual machine IPv4 address
+                //============================================================
+                // Update child DNS zone by adding a A record pointing to virtual machine IPv4 address
 
-                //var vm2PublicIpAddress = virtualMachine2.GetPrimaryPublicIPAddress();
-                //Utilities.Log("Updating child DNS zone " + partnerSubDomainName + "...");
-                //partnersDnsZone = partnersDnsZone.Update()
-                //        .DefineARecordSet("@")
-                //            .WithIPv4Address(vm2PublicIpAddress.IPAddress)
-                //            .Attach()
-                //        .Apply();
-                //Utilities.Log("Updated child DNS zone " + partnersDnsZone.Name);
-                //Utilities.Print(partnersDnsZone);
+                Utilities.Log("Updating child DNS zone " + partnerSubDomainName + "...");
+                Utilities.Log("Updating root DNS zone " + dnsZoneName + "...");
+                var childAInput = new DnsARecordData()
+                {
+                    TtlInSeconds = 3600,
+                    DnsARecords =
+                    {
+                        new DnsARecordInfo()
+                        {
+                            IPv4Address = IPAddress.Parse(publicIP2.Data.IPAddress)
+                        }
+                    }
+                };
+                var childARecord = await childZone.GetDnsARecords().CreateOrUpdateAsync(WaitUntil.Completed, "@", childAInput);
+                Utilities.Log("Updated root DNS zone " + childZone.Data.Name);
 
-                ////============================================================
-                //// Removes A record entry from the root DNS zone
+                Utilities.Log("Updated child DNS zone " + childZone.Data.Name);
 
-                //Utilities.Log("Removing A Record from root DNS zone " + rootDnsZone.Name + "...");
-                //rootDnsZone = rootDnsZone.Update()
-                //        .WithoutARecordSet("employees")
-                //        .Apply();
-                //Utilities.Log("Removed A Record from root DNS zone");
-                //Utilities.Print(rootDnsZone);
+                //============================================================
+                // Removes A record entry from the root DNS zone
 
-                ////============================================================
-                //// Deletes the DNS zone
+                Utilities.Log("Removing A Record from root DNS zone " + dnsZone.Data.Name + "...");
+                await aRecord.Value.DeleteAsync(WaitUntil.Completed);
 
-                //Utilities.Log("Deleting child DNS zone " + partnersDnsZone.Name + "...");
-                //azure.DnsZones.DeleteById(partnersDnsZone.Id);
-                //Utilities.Log("Deleted child DNS zone " + partnersDnsZone.Name);
+                Utilities.Log("Removed A Record from root DNS zone");
+
+                //============================================================
+                // Deletes the DNS zone
+
+                Utilities.Log("Deleting child DNS zone " + childZone.Data.Name + "...");
+                await childZone.DeleteAsync(WaitUntil.Completed);
+                Utilities.Log("Deleted child DNS zone " + childZone.Data.Name);
             }
             //finally
             {
